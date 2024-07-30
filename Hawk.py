@@ -165,7 +165,7 @@ app.layout = html.Div([
     # Link al font di Google Fonts
     html.Link(href='https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap', rel='stylesheet'),
     
-    html.H1("Dashboard FTTH", style={'textAlign': 'center', 'color': '#2c3e50', 'fontFamily': 'Roboto, sans-serif'}),
+    html.H1("Hawk", style={'textAlign': 'center', 'color': '#2c3e50', 'fontFamily': 'Roboto, sans-serif'}),
     
     html.Div([
         html.Div([
