@@ -3,6 +3,7 @@ from dash import Dash, dcc, html
 from dash.dependencies import Input, Output, State
 import plotly.express as px
 import logging
+import plotly.graph_objects as go
 
 # Configura logging
 logging.basicConfig(level=logging.INFO)
