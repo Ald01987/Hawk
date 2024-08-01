@@ -1,152 +1,130 @@
 import pandas as pd
-from dash import Dash, dcc, html
-from dash.dependencies import Input, Output, State
-import plotly.express as px
 import logging
+from dash import Dash, dcc, html
+from dash.dependencies import Input, Output
+import plotly.graph_objects as go
 
-# Configura logging
-logging.basicConfig(level=logging.INFO)
+# Configurare il logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Caricare il file Excel e i fogli di lavoro
 file_path = 'Dashboard_FTTH.xlsx'
 
 try:
     df_ftth = pd.read_excel(file_path, sheet_name='Dashboard_FTTH', header=2)
-    df_multi = pd.read_excel(file_path, sheet_name='Indirizzi_Multifibra')
+    df_multi = pd.read_excel(file_path, sheet_name='Indirizzi_Multifibra', header=0)
+    df_collab = pd.read_excel(file_path, sheet_name='Collaborazioni', header=0)
     logging.info("Dati caricati con successo")
 except Exception as e:
     logging.error(f"Errore nel caricamento del file Excel: {e}")
     df_ftth = pd.DataFrame()
     df_multi = pd.DataFrame()
+    df_collab = pd.DataFrame()
 
 # Preprocessare i dati
 df_ftth.fillna('', inplace=True)
 df_multi.fillna('', inplace=True)
+df_collab.fillna('', inplace=True)
 
 def identify_building_type_and_info(row):
-    building_type = 'Altro'
-    additional_info = []
-
-    narrative = str(row['ACT_NARRATIVE']).lower().strip()
-
-    # Identificare il tipo di edificio
-    if 'palazzo' in narrative:
-        building_type = 'Palazzo'
-    elif 'costruzione indipendente' in narrative:
-        building_type = 'Costruzione indipendente'
-    elif 'condominio' in narrative:
-        building_type = 'Condominio'
-    elif 'edificio con numero appartam >:8.piano>3' in narrative:
-        building_type = 'Edificio con numero appartam >:8.Piano>3'
-    elif 'edificio con numero appartam < 3' in narrative:
-        building_type = 'Edificio con numero appartam < 3'
-    elif 'villa' in narrative:
-        building_type = 'Villa'
-    elif 'att.comm' in narrative:
-        building_type = 'Att.Comm'
-    elif 'quarto piano' in narrative:
-        building_type = 'Quarto piano'
-    elif 'primo piano' in narrative:
-        building_type = 'Primo piano'
-    elif 'secondo piano' in narrative:
-        building_type = 'Secondo piano'
-    elif 'terzo piano' in narrative:
-        building_type = 'Terzo piano'
-    elif 'quinto piano' in narrative:
-        building_type = 'Quinto piano'
-    elif 'piano 1' in narrative:
-        building_type = 'Piano 1'
-    elif 'piano 2' in narrative:
-        building_type = 'Piano 2'
-    elif 'piano 3' in narrative:
-        building_type = 'Piano 3'
-    elif 'piano 4' in narrative:
-        building_type = 'Piano 4'
-    elif 'piano 5' in narrative:
-        building_type = 'Piano 5'
-    elif 'piano 6' in narrative:
-        building_type = 'Piano 6'
-    elif '1o piano' in narrative:
-        building_type = '1o piano'
-    elif '2o piano' in narrative:
-        building_type = '2o piano'
-    elif '3o piano' in narrative:
-        building_type = '3o piano'
-    elif '4o piano' in narrative:
-        building_type = '4o piano'
-    elif '5o piano' in narrative:
-        building_type = '5o piano'
-    elif '6o piano' in narrative:
-        building_type = '6o piano'   
-    elif 'Casa singola' in narrative:
-        building_type = 'Casa singola'
-    elif '1 piano' in narrative:
-        building_type = '1 piano'
-    elif '2 piano' in narrative:
-        building_type = '2 piano'
-    elif '3 piano' in narrative:
-        building_type = '3 piano'
-    elif '4 piano' in narrative:
-        building_type = '4 piano'
-    elif '5 piano' in narrative:
-        building_type = '5 piano'
-    elif 'piano 6' in narrative:
-        building_type = '6 piano'
-                 
-    # Rilevare informazioni aggiuntive
-    if 'palificazione' in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Palificazione')
-    if 'attraversamento stradale'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Attraversamento Stradale')
-    if'facciata'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Facciata')
-    if'due pezzi di scala'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Due Pezzi di Scala')
-    if'più pezzi di scala'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Più Pezzi di Scala')
-    if'canalina ostruita'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('canalina ostruita')
-    if'Pozzetto'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Pozzetto')
-    if'Pozzetti'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Pozzetti')
-    if'Tubazione ostruita'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Tubazione ostruita')
-    if'Intercapedine'in str(row['NOTE_TECNICO']).lower():
-        additional_info.append('Intercapedine')
-            
-    if not additional_info:
-        additional_info.append('Nessuna informazione aggiuntiva rilevata')
+    building_type_mapping = {
+        'palazzo': 'Palazzo',
+        'costruzione indipendente': 'Costruzione indipendente',
+        'condominio': 'Condominio',
+        'edificio con numero appartam >:8.piano>3': 'Edificio con numero appartam >:8.Piano>3',
+        'edificio con numero appartam < 3': 'Edificio con numero appartam < 3',
+        'villa': 'Villa',
+        'att.comm': 'Att.Comm',
+        'quarto piano': 'Quarto piano',
+        'primo piano': 'Primo piano',
+        'secondo piano': 'Secondo piano',
+        'terzo piano': 'Terzo piano',
+        'quinto piano': 'Quinto piano',
+        'piano 1': 'Piano 1',
+        'piano 2': 'Piano 2',
+        'piano 3': 'Piano 3',
+        'piano 4': 'Piano 4',
+        'piano 5': 'Piano 5',
+        'piano 6': 'Piano 6',
+        '1o piano': '1o piano',
+        '2o piano': '2o piano',
+        '3o piano': '3o piano',
+        '4o piano': '4o piano',
+        '5o piano': '5o piano',
+        '6o piano': '6o piano',
+        'Casa singola': 'Casa singola',
+        '1 piano': '1 piano',
+        '2 piano': '2 piano',
+        '3 piano': '3 piano',
+        '4 piano': '4 piano',
+        '5 piano': '5 piano',
+        'piano 6': '6 piano'
+    }
     
+    narrative = str(row.get('ACT_NARRATIVE', '')).lower().strip()
+    building_type = next((v for k, v in building_type_mapping.items() if k in narrative), 'Altro')
+
+    additional_info_mapping = {
+        'palificazione': 'Palificazione',
+        'attraversamento stradale': 'Attraversamento Stradale',
+        'facciata': 'Facciata',
+        'due pezzi di scala': 'Due Pezzi di Scala',
+        'più pezzi di scala': 'Più Pezzi di Scala',
+        'canalina ostruita': 'Canalina Ostruita',
+        'pozzetto': 'Pozzetto',
+        'pozzetti': 'Pozzetti',
+        'tubazione ostruita': 'Tubazione Ostruita',
+        'intercapedine': 'Intercapedine'
+    }
+    
+    notes = str(row.get('NOTE_TECNICO', '')).lower()
+    additional_info = [v for k, v in additional_info_mapping.items() if k in notes]
+
     return building_type, additional_info
 
-
-# Funzione per calcolare i tassi di successo
 def calculate_success_rate(address, city):
     logging.info(f"Calcolo del tasso di successo per indirizzo: {address}, città: {city}")
+    
+    logging.debug(f"Colonne disponibili in df_ftth: {df_ftth.columns.tolist()}")
+    logging.debug(f"Prime righe di df_ftth: {df_ftth.head()}")
+    
     filtered_data = df_ftth[(df_ftth['STREET'] == address) & (df_ftth['CITY'] == city)]
+    logging.debug(f"Dati filtrati:\n{filtered_data}")
+    
     total = len(filtered_data)
+    
     if total == 0:
         logging.warning("Nessun dato trovato per l'indirizzo e la città forniti.")
-        return {'success_rate': 0, 'details': {}, 'collaboration': 'Indeterminato', 'multifibra': 'No', 'building_type': 'Non specificato', 'additional_info': []}
-    
+        return {
+            'success_rate': 0,
+            'details': {},
+            'collaboration': 'Indeterminato',
+            'multifibra': 'No',
+            'building_type': 'Non specificato',
+            'additional_info': [],
+            'notes_technical': [],
+            'management_dates': [],
+            'total_rows': 0,
+            'success_rows': 0
+        }
+
     success_count = len(filtered_data[filtered_data['CAUSALE'] == 'COMPLWR'])
     success_rate = (success_count / total) * 100
     
     causali_counts = filtered_data['CAUSALE'].value_counts(normalize=True) * 100
     causali_details = causali_counts.to_dict()
 
-    if not filtered_data['WR_COLLABORATION'].empty:
-        collaboration_value = filtered_data['WR_COLLABORATION'].mode()[0]
-        collaboration = 'Collaborazione' if collaboration_value == 'SI' else 'Singolista'
-    else:
-        collaboration = 'Indeterminato'
+    collaboration_value = filtered_data['WR_COLLABORATION'].mode().get(0, 'Indeterminato')
+    collaboration = 'Collaborazione' if collaboration_value == 'SI' else 'Singolista'
 
-    has_multifibra = address in df_multi['STREET MULTI'].values
+    has_multifibra = address in df_multi['STREET_MULTI'].values
     if has_multifibra:
         success_rate *= 1.25
 
     building_type, additional_info = identify_building_type_and_info(filtered_data.iloc[0])
+
+    notes_technical = filtered_data['NOTE_TECNICO'].tolist()
+    management_dates = filtered_data['DAT_GIORNO'].tolist()
 
     return {
         'success_rate': success_rate,
@@ -154,88 +132,117 @@ def calculate_success_rate(address, city):
         'collaboration': collaboration,
         'multifibra': 'Sì' if has_multifibra else 'No',
         'building_type': building_type,
-        'additional_info': additional_info
+        'additional_info': additional_info,
+        'notes_technical': notes_technical,
+        'management_dates': management_dates,
+        'total_rows': total,
+        'success_rows': success_count
     }
 
-# Inizializzare l'app Dash
+def create_pie_chart(details):
+    fig = go.Figure()
+    if details:
+        fig.add_trace(go.Pie(
+            labels=list(details.keys()),
+            values=list(details.values()),
+            hole=0.3,
+            textinfo='label+percent',
+            marker=dict(colors=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A'])
+        ))
+        fig.update_layout(
+            title_text='Distribuzione delle Causali',
+            margin=dict(l=0, r=0, t=40, b=0),
+            showlegend=True,
+            paper_bgcolor='white',
+            plot_bgcolor='white'
+        )
+        fig.update_traces(
+            textfont_size=14,
+            pull=[0.1 if val == max(details.values()) else 0 for val in details.values()],
+            marker=dict(
+                line=dict(
+                    color='white',
+                    width=2
+                )
+            )
+        )
+    return fig
+
 app = Dash(__name__)
 
-# Layout dell'app
 app.layout = html.Div([
-    # Link al font di Google Fonts
-    html.Link(href='https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap', rel='stylesheet'),
+    html.Link(href='https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap', rel='stylesheet'),
     
-    html.H1("Hawk", style={'textAlign': 'center', 'color': '#2c3e50', 'fontFamily': 'Roboto, sans-serif'}),
+    html.H1("Hawk", style={'textAlign': 'center', 'font-family': 'Open Sans'}),
     
     html.Div([
         html.Div([
-            html.Label("Città:", style={'fontSize': '18px', 'fontWeight': 'bold', 'fontFamily': 'Roboto, sans-serif', 'color': '#2980b9'}),
-            dcc.Input(id='city-input', type='text', value='', placeholder='Inserisci città', style={'fontFamily': 'Roboto, sans-serif', 'border': '1px solid #2980b9'}),
-            html.Br(),
-            html.Label("Indirizzo:", style={'fontSize': '18px', 'fontWeight': 'bold', 'fontFamily': 'Roboto, sans-serif', 'color': '#2980b9'}),
-            dcc.Input(id='address-input', type='text', value='', placeholder='Inserisci indirizzo', style={'fontFamily': 'Roboto, sans-serif', 'border': '1px solid #2980b9'}),
-            html.Br(),
-            html.Button('Verifica', id='submit-button', n_clicks=0, style={'marginTop': '10px', 'padding': '10px 20px', 'backgroundColor': '#2980b9', 'color': 'white', 'border': 'none', 'borderRadius': '5px', 'fontFamily': 'Roboto, sans-serif'}),
-            html.Div(id='error-message', style={'color': 'red', 'marginTop': '10px', 'fontFamily': 'Roboto, sans-serif'})
-        ], style={'width': '40%', 'margin': 'auto'}),
+            html.Label("Città:", style={'fontSize': '18px', 'fontWeight': 'bold', 'font-family': 'Open Sans'}),
+            dcc.Dropdown(
+                id='city-dropdown',
+                options=[{'label': city, 'value': city} for city in df_ftth['CITY'].unique()],
+                value=df_ftth['CITY'].unique()[0],
+                style={'width': '100%', 'font-family': 'Open Sans'}
+            )
+        ], style={'width': '48%', 'display': 'inline-block'}),
         
-        html.Div(id='output-container', style={'marginTop': '20px', 'fontFamily': 'Roboto, sans-serif'}),
-        dcc.Graph(id='pie-chart', style={'marginTop': '20px'})
-    ], style={'padding': '20px', 'backgroundColor': '#ecf0f1', 'borderRadius': '10px', 'boxShadow': '0 4px 8px rgba(0, 0, 0, 0.1)'})
+        html.Div([
+            html.Label("Indirizzo:", style={'fontSize': '18px', 'fontWeight': 'bold', 'font-family': 'Open Sans'}),
+            dcc.Dropdown(
+                id='address-dropdown',
+                options=[{'label': address, 'value': address} for address in df_ftth['STREET'].unique()],
+                value=df_ftth['STREET'].unique()[0],
+                style={'width': '100%', 'font-family': 'Open Sans'}
+            )
+        ], style={'width': '48%', 'display': 'inline-block'})
+    ], style={'padding': '10px'}),
+    
+    html.Div(id='info-container', style={'padding': '10px'}),
+    
+    dcc.Graph(id='pie-chart')
 ])
 
-# Callback per aggiornare il contenitore di output e il grafico a torta
 @app.callback(
-    [Output('output-container', 'children'),
-     Output('pie-chart', 'figure'),
-     Output('error-message', 'children')],
-    [Input('submit-button', 'n_clicks')],
-    [State('city-input', 'value'),
-     State('address-input', 'value')]
+    [Output('info-container', 'children'),
+     Output('pie-chart', 'figure')],
+    [Input('city-dropdown', 'value'),
+     Input('address-dropdown', 'value')]
 )
-def update_output(n_clicks, city, address):
-    logging.info(f"Callback chiamato con {n_clicks} clic, città: {city}, indirizzo: {address}")
+def update_output(city, address):
+    result = calculate_success_rate(address, city)
     
-    if n_clicks > 0:
-        if not city or not address:
-            return "", {}, "Per favore, inserisci sia la città che l'indirizzo."
-
-        try:
-            result = calculate_success_rate(address, city)
-            success_rate = result['success_rate']
-            details = result['details']
-            collaboration = result['collaboration']
-            multifibra = result['multifibra']
-            building_type = result['building_type']
-            additional_info = result['additional_info']
-
-            logging.info(f"Risultati calcolati: {result}")
-
-            # Creare il grafico a torta
-            if details:
-                fig = px.pie(values=list(details.values()), names=list(details.keys()), title='Distribuzione delle Causali')
-            else:
-                fig = {}
-
-            output_text = html.Div([
-                html.P(f"Indirizzo: {address}, {city}", style={'fontSize': '16px', 'fontWeight': 'bold', 'fontFamily': 'Roboto, sans-serif', 'color': '#34495e'}),
-                html.P(f"Tasso di successo: {success_rate:.2f}%", style={'fontSize': '16px', 'fontFamily': 'Roboto, sans-serif', 'color': '#34495e'}),
-                html.P(f"Tipo di lavoro: {collaboration}", style={'fontSize': '16px', 'fontFamily': 'Roboto, sans-serif', 'color': '#34495e'}),
-                html.P(f"Presenza di multifibra: {multifibra}", style={'fontSize': '16px', 'fontFamily': 'Roboto, sans-serif', 'color': '#34495e'}),
-                html.P(f"Tipo di edificio: {building_type}", style={'fontSize': '16px', 'fontFamily': 'Roboto, sans-serif', 'color': '#34495e'}),
-                html.P(f"Informazioni aggiuntive: {', '.join(additional_info)}", style={'fontSize': '16px', 'fontFamily': 'Roboto, sans-serif', 'color': '#34495e'}),
-            ], style={'backgroundColor': '#bdc3c7', 'padding': '10px', 'borderRadius': '5px', 'boxShadow': '0 2px 4px rgba(0, 0, 0, 0.1)'})
-
-            return output_text, fig, ""
-        except Exception as e:
-            logging.error(f"Errore durante l'aggiornamento dell'output: {e}")
-            return f"Errore nell'aggiornamento dell'output: {e}", {}, ""
+    # Generare il contenuto informativo
+    info = html.Div([
+        html.H2(f"Dettagli per {address} in {city}", style={'font-family': 'Open Sans'}),
+        html.P(f"Tasso di successo: {result['success_rate']:.2f}%", style={'font-family': 'Open Sans'}),
+        html.P(f"Collaborazione: {result['collaboration']}", style={'font-family': 'Open Sans'}),
+        html.P(f"Multifibra: {result['multifibra']}", style={'font-family': 'Open Sans'}),
+        html.P(f"Tipo di edificio: {result['building_type']}", style={'font-family': 'Open Sans'}),
+        
+        html.Div([
+            html.H3("Informazioni Aggiuntive", style={'font-family': 'Open Sans'}),
+            html.Ul([html.Li(info) for info in result['additional_info']], style={'font-family': 'Open Sans'})
+        ], style={'padding': '10px'}),
+        
+        html.Div([
+            html.H3("NOTE TECNICO", style={'font-family': 'Open Sans'}),
+            html.Ul([html.Li(note) for note in result['notes_technical']], style={'font-family': 'Open Sans'})
+        ], style={'padding': '10px'}),
+        
+        html.Div([
+            html.H3("Data di gestione", style={'font-family': 'Open Sans'}),
+            html.Ul([html.Li(date.strftime('%Y-%m-%d')) for date in result['management_dates']], style={'font-family': 'Open Sans'})
+        ], style={'padding': '10px'})
+    ])
     
-    return "", {}, ""
+    # Generare il grafico a torta
+    pie_chart_figure = create_pie_chart(result['details'])
+    
+    return info, pie_chart_figure
 
-# Eseguire l'app Dash
 if __name__ == '__main__':
     app.run_server(debug=True)
+
 
 
 # Versione definitiva!
