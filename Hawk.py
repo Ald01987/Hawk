@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Configura il sistema di logging per registrare informazioni e errori
 
 # Caricare il file Excel e i fogli di lavoro
-file_path = 'C:/Users/07703536/Desktop/Dashboard_FTTH/Dashboard_FTTH.xlsx'
+file_path = 'Dashboard_FTTH.xlsx'
 
 try:
     # Carica i dati dai fogli di lavoro Excel
