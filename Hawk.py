@@ -1,7 +1,7 @@
 import pandas as pd
 import logging
 from dash import Dash, dcc, html
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output
 import plotly.graph_objects as go
 from difflib import get_close_matches
 
@@ -9,22 +9,25 @@ from difflib import get_close_matches
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Caricare il file Excel e i fogli di lavoro
-file_path = 'Dashboard_FTTH.xlsx'
+file_path = 'C:/Users/07703536/Desktop/Dashboard_FTTH/Dashboard_FTTH.xlsx'
 
 try:
     df_ftth = pd.read_excel(file_path, sheet_name='Dashboard_FTTH', header=2)
     df_multi = pd.read_excel(file_path, sheet_name='Indirizzi_Multifibra', header=0)
+    df_collab = pd.read_excel(file_path, sheet_name='Collaborazioni', header=0)
     df_pte = pd.read_excel(file_path, sheet_name='Indirizzi_PTE', header=0)
     logging.info("Dati caricati con successo")
 except Exception as e:
     logging.error(f"Errore nel caricamento del file Excel: {e}")
     df_ftth = pd.DataFrame()
     df_multi = pd.DataFrame()
+    df_collab = pd.DataFrame()
     df_pte = pd.DataFrame()
 
 # Preprocessare i dati
 df_ftth.fillna('', inplace=True)
 df_multi.fillna('', inplace=True)
+df_collab.fillna('', inplace=True)
 df_pte.fillna('', inplace=True)
 
 def identify_building_type_and_info(row):
@@ -83,38 +86,23 @@ def identify_building_type_and_info(row):
 
     return building_type, additional_info
 
-def get_closest_pte_address(address, pte_df):
-    addresses = pte_df['STREET_PTE'].tolist()
-    closest_match = get_close_matches(address, addresses, n=1, cutoff=0.7)
-    return closest_match[0] if closest_match else 'Nessun indirizzo trovato'
-
-def update_success_rate_based_on_pte(address, pte_df, current_rate):
-    pte_address = get_closest_pte_address(address, pte_df)
-    logging.info(f"Indirizzo PTE più vicino: {pte_address}")
-
-    pte_row = pte_df[pte_df['STREET_PTE'] == pte_address]
-    
-    if not pte_row.empty:
-        pte_address = pte_row.iloc[0]['STREET_PTE']
-        aparato_ubicazione = pte_row.iloc[0]['Apparato_UBICAZIONE']
-
-        if aparato_ubicazione in ['ANDRONE', 'INCASSATO', 'INTERNO GARAGE', 'INTERNO INGRESSO', 'PIANO 1', 'SEMINTERRATO', 'SOTTOSCALA']:
-            current_rate *= 1.10  # Aumentare del 10%
-        else:
-            current_rate *= 0.90  # Diminuisci del 10%
-        
-        logging.info(f"Aggiornamento del tasso di successo: {current_rate:.2f}")
-    else:
-        logging.warning(f"Nessun indirizzo PTE trovato per l'indirizzo: {address}")
-
-    return pte_address, aparato_ubicazione, current_rate
+def get_closest_pte_address(address):
+    pte_addresses = df_pte['STREET_PTE'].dropna().unique()
+    closest_match = get_close_matches(address, pte_addresses, n=1)
+    return closest_match[0] if closest_match else None
 
 def calculate_success_rate(address, city):
     logging.info(f"Calcolo del tasso di successo per indirizzo: {address}, città: {city}")
-    
+
+    logging.debug(f"Colonne disponibili in df_ftth: {df_ftth.columns.tolist()}")
+    logging.debug(f"Prime righe di df_ftth: {df_ftth.head()}")
+
     filtered_data = df_ftth[(df_ftth['STREET'] == address) & (df_ftth['CITY'] == city)]
-    
-    if filtered_data.empty:
+    logging.debug(f"Dati filtrati:\n{filtered_data}")
+
+    total = len(filtered_data)
+
+    if total == 0:
         logging.warning("Nessun dato trovato per l'indirizzo e la città forniti.")
         return {
             'success_rate': 0,
@@ -127,14 +115,14 @@ def calculate_success_rate(address, city):
             'management_dates': [],
             'total_rows': 0,
             'success_rows': 0,
-            'pte_address': 'N/A',
-            'apparato_ubicazione': 'N/A'
+            'pte_address': 'Non disponibile',
+            'roe_type': 'Non specificato',
+            'apparato_ubicazione': 'Non specificato'
         }
 
-    total = len(filtered_data)
     success_count = len(filtered_data[filtered_data['CAUSALE'] == 'COMPLWR'])
     success_rate = (success_count / total) * 100
-    
+
     causali_counts = filtered_data['CAUSALE'].value_counts(normalize=True) * 100
     causali_details = causali_counts.to_dict()
 
@@ -145,12 +133,34 @@ def calculate_success_rate(address, city):
     if has_multifibra:
         success_rate *= 1.25
 
+    pte_address = get_closest_pte_address(address)
+    if pte_address:
+        logging.info(f"Indirizzo PTE trovato: {pte_address}")
+        if pte_address == address:
+            success_rate *= 1.1
+        else:
+            success_rate *= 0.9
+    else:
+        pte_address = 'Non disponibile'
+
+    roe_type = 'Non specificato'
+    if 'Apparato_UBICAZIONE' in filtered_data.columns:
+        for _, row in filtered_data.iterrows():
+            if row['Apparato_UBICAZIONE'] in ['ROE Interno', 'ROE a Muro Interno']:
+                success_rate *= 1.1
+                roe_type = row['Apparato_UBICAZIONE']
+            else:
+                success_rate *= 0.9
+
+    # Limitare il tasso di successo a un massimo del 100%
+    success_rate = min(success_rate, 100)
+
     building_type, additional_info = identify_building_type_and_info(filtered_data.iloc[0])
 
     notes_technical = filtered_data['NOTE_TECNICO'].tolist()
-    management_dates = pd.to_datetime(filtered_data['DAT_GIORNO']).tolist()
+    management_dates = filtered_data['DAT_GIORNO'].tolist()
 
-    pte_address, aparato_ubicazione, success_rate = update_success_rate_based_on_pte(address, df_pte, success_rate)
+    roe_info = df_pte[df_pte['STREET_PTE'] == pte_address].iloc[0] if pte_address != 'Non disponibile' else pd.Series()
 
     return {
         'success_rate': success_rate,
@@ -164,158 +174,113 @@ def calculate_success_rate(address, city):
         'total_rows': total,
         'success_rows': success_count,
         'pte_address': pte_address,
-        'apparato_ubicazione': aparato_ubicazione
+        'roe_type': roe_info.get('TIPO_ROE', 'Non specificato'),
+        'apparato_ubicazione': roe_info.get('Apparato_UBICAZIONE', 'Non specificato')
     }
 
 def create_pie_chart(details):
     fig = go.Figure()
-
     if details:
-        labels = list(details.keys())
-        values = list(details.values())
-
-        fig.add_trace(go.Pie(labels=labels, values=values, hole=0.4))
+        fig.add_trace(go.Pie(
+            labels=list(details.keys()),
+            values=list(details.values()),
+            hole=0.3,
+            textinfo='label+percent',
+            marker=dict(colors=['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A'])
+        ))
         fig.update_layout(
-            title_text='Distribuzione per CAUSALE',
+            title_text='Distribuzione delle Causali',
             margin=dict(l=0, r=0, t=40, b=0),
             showlegend=True,
             paper_bgcolor='white',
             plot_bgcolor='white'
         )
-    else:
-        fig.update_layout(
-            title_text='Nessun dato disponibile',
-            margin=dict(l=0, r=0, t=40, b=0),
-            showlegend=False,
-            paper_bgcolor='white',
-            plot_bgcolor='white'
+        fig.update_traces(
+            textfont_size=14,
+            pull=[0.1 if val == max(details.values()) else 0 for val in details.values()],
+            marker=dict(
+                line=dict(
+                    color='white',
+                    width=2
+                )
+            )
         )
     return fig
 
-# Funzione per creare un grafico a torta delle causali
-def create_pie_chart(causali_details):
-    fig = go.Figure()
-    if causali_details:
-        # Aggiunge un grafico a torta con le causali
-        fig.add_trace(go.Pie(labels=list(causali_details.keys()), values=list(causali_details.values()), hole=0.4))
-        fig.update_layout(
-            title_text='Distribuzione Causali',
-            annotations=[dict(text='Causali', x=0.5, y=0.5, font_size=20, showarrow=False)]
-        )
-    else:
-        # Grafico a torta con una sola voce "Nessuna" se non ci sono dati
-        fig.add_trace(go.Pie(labels=['Nessuna'], values=[1], hole=0.4))
-        fig.update_layout(
-            title_text='Distribuzione Causali',
-            annotations=[dict(text='Nessuna', x=0.5, y=0.5, font_size=20, showarrow=False)]
-        )
-
-    return fig
-
-# Creare l'app Dash
 app = Dash(__name__)
 
-# Definire il layout dell'app
 app.layout = html.Div([
-    html.H1("HAWK", style={'text-align': 'center','color': '#008080','font-family': 'Arial, sans-serif'}),
+    html.Link(href='https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap', rel='stylesheet'),
     
-    html.Div(
-        "Per la verifica dell'indirizzo ti ricordo di utilizzare solo caratteri maiuscoli edi utilizzare il browser Google Chrome. Grazie.",
-        style={'color': '#dc143c', 'text-align': 'left', 'font-size': '18px', 'margin-bottom': '10px','font-family': 'Arial, sans-serif'}
-    ),
+    html.H1("Hawk", style={'textAlign': 'center', 'font-family': 'Open Sans'}),
     
-    # Dropdown per selezionare la città
-    dcc.Dropdown(
-        id='city-dropdown',
-        options=[{'label': city, 'value': city} for city in df_ftth['CITY'].unique()],
-        value=df_ftth['CITY'].unique()[0],  # Impostare un valore predefinito
-        style={'width': '50%', 'margin-bottom': '3px','font-family': 'Arial, sans-serif'}
-    ),
+    html.Div([
+        html.Div([
+            html.Label("Città:", style={'fontSize': '18px', 'fontWeight': 'bold', 'font-family': 'Open Sans'}),
+            dcc.Dropdown(
+                id='city-dropdown',
+                options=[{'label': city, 'value': city} for city in df_ftth['CITY'].unique()],
+                value=df_ftth['CITY'].unique()[0],
+                style={'width': '100%', 'font-family': 'Open Sans'}
+            )
+        ], style={'width': '48%', 'display': 'inline-block'}),
+        
+        html.Div([
+            html.Label("Indirizzo:", style={'fontSize': '18px', 'fontWeight': 'bold', 'font-family': 'Open Sans'}),
+            dcc.Dropdown(
+                id='address-dropdown',
+                options=[{'label': address, 'value': address} for address in df_ftth['STREET'].unique()],
+                value=df_ftth['STREET'].unique()[0],
+                style={'width': '100%', 'font-family': 'Open Sans'}
+            )
+        ], style={'width': '48%', 'display': 'inline-block'})
+    ], style={'padding': '10px'}),
     
-    # Input per inserire l'indirizzo
-    dcc.Input(
-        id='address-input',
-        type='text',
-        value='',
-        placeholder='Inserisci l\'indirizzo',
-        style={'width': '50%', 'padding': '10px', 'margin-bottom': '5px','font-family': 'Arial, sans-serif'}
-    ),
+    html.Div(id='info-container', style={'padding': '10px'}),
     
-    # Bottone per avviare la ricerca
-    html.Button(
-        'Cerca',
-        id='search-button',
-        n_clicks=0,
-        style={
-            'width': '6%',
-            'padding': '10px',
-            'background-color': '#007BFF',
-            'color': 'white',
-            'border': 'none',
-            'border-radius': '5px',
-            'cursor': 'pointer',
-            'font-size': '16px',
-            'font-family': 'Arial, sans-serif'
-        }
-    ),
-    
-    # Contenitore per visualizzare le informazioni
-    html.Div(id='info-container', style={'margin-top': '20px'}),
-    
-    # Grafico a torta
-    dcc.Graph(id='pie-chart', style={'margin-top': '20px'})
+    dcc.Graph(id='pie-chart')
 ])
 
-# Definire il callback per aggiornare l'output in base ai click del bottone di ricerca
 @app.callback(
     [Output('info-container', 'children'),
      Output('pie-chart', 'figure')],
-    [Input('search-button', 'n_clicks')],
-    [State('address-input', 'value'),
-     State('city-dropdown', 'value')]
+    [Input('city-dropdown', 'value'),
+     Input('address-dropdown', 'value')]
 )
-def update_output(n_clicks, address, city):
-    if n_clicks > 0:
-        try:
-            # Calcola il tasso di successo e ottieni i risultati
-            result = calculate_success_rate(address, city)
-            
-            # Crea la visualizzazione delle informazioni
-            info = html.Div([
-                html.H2(f"Dettagli per {address}", style={'font-family': 'Arial, sans-serif','color':'#1e90ff'}),
-                html.P(f"Tasso di successo: {result['success_rate']:.2f}%", style={'font-family': 'Arial, sans-serif'}),
-                html.P(f"Collaborazione: {result['collaboration']}", style={'font-family': 'Arial, sans-serif'}),
-                html.P(f"Multifibra: {result['multifibra']}", style={'font-family': 'Arial, sans-serif'}),
-                html.P(f"Tipo di edificio: {result['building_type']}", style={'font-family': 'Arial, sans-serif'}),
-                html.P(f"Indirizzo PTE: {result['pte_address']}", style={'font-family': 'Arial, sans-serif'}),
-                html.P(f"Apparato Ubicazione: {result['apparato_ubicazione']}", style={'font-family': 'Arial, sans-serif'}),
-                
-                html.Div([
-                    html.H3("Informazioni Aggiuntive", style={'font-family': 'Arial, sans-serif','color':'#1e90ff'}),
-                    html.Ul([html.Li(info) for info in result['additional_info']], style={'font-family': 'Arial, sans-serif'})
-                ], style={'padding': '10px'}),
-                
-                html.Div([
-                    html.H3("NOTE TECNICO", style={'font-family': 'Arial, sans-serif','color':'#1e90ff'}),
-                    html.Ul([html.Li(note) for note in result['notes_technical']], style={'font-family': 'Arial, sans-serif'})
-                ], style={'padding': '10px'}),
-                
-                html.Div([
-                    html.H3("Data di gestione", style={'font-family': 'Arial, sans-serif','color':'#1e90ff'}),
-                    html.Ul([html.Li(date.strftime('%Y-%m-%d')) for date in result['management_dates']], style={'font-family': 'Arial, sans-serif'})
-                ], style={'padding': '10px'})
-            ])
-            
-            # Crea il grafico a torta
-            pie_chart_figure = create_pie_chart(result['details'])
-            
-            return info, pie_chart_figure
-        except Exception as e:
-            logging.error(f"Errore nell'aggiornamento della dashboard: {e}")
-            return html.Div(["Errore nel calcolo dei dati. Verifica i log per dettagli."]), go.Figure()
-    return html.Div(), go.Figure()
+def update_output(city, address):
+    result = calculate_success_rate(address, city)
+    
+    # Generare il contenuto informativo
+    info = html.Div([
+        html.H2(f"Dettagli per {address} in {city}", style={'font-family': 'Open Sans'}),
+        html.P(f"Tasso di successo: {result['success_rate']:.2f}%", style={'font-family': 'Open Sans'}),
+        html.P(f"Collaborazione: {result['collaboration']}", style={'font-family': 'Open Sans'}),
+        html.P(f"Multifibra: {result['multifibra']}", style={'font-family': 'Open Sans'}),
+        html.P(f"Tipo di edificio: {result['building_type']}", style={'font-family': 'Open Sans'}),
+        html.P(f"Indirizzo PTE: {result['pte_address']}", style={'font-family': 'Open Sans'}),
+        html.P(f"Tipo ROE: {result['roe_type']}", style={'font-family': 'Open Sans'}),
+        html.P(f"Apparato Ubicazione: {result['apparato_ubicazione']}", style={'font-family': 'Open Sans'}),
+        
+        html.Div([
+            html.H3("Informazioni Aggiuntive", style={'font-family': 'Open Sans'}),
+            html.Ul([html.Li(info) for info in result['additional_info']], style={'font-family': 'Open Sans'})
+        ], style={'padding': '10px'}),
+        
+        html.Div([
+            html.H3("NOTE TECNICO", style={'font-family': 'Open Sans'}),
+            html.Ul([html.Li(note) for note in result['notes_technical']], style={'font-family': 'Open Sans'})
+        ], style={'padding': '10px'}),
+        
+        html.Div([
+            html.H3("Data di gestione", style={'font-family': 'Open Sans'}),
+            html.Ul([html.Li(date.strftime('%Y-%m-%d')) for date in result['management_dates']], style={'font-family': 'Open Sans'})
+        ], style={'padding': '10px'})
+    ])
+    
+    # Generare il grafico a torta
+    pie_chart_figure = create_pie_chart(result['details'])
+    
+    return info, pie_chart_figure
 
-# Avvia l'app Dash
 if __name__ == '__main__':
     app.run_server(debug=True)
-
