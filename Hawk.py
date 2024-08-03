@@ -9,7 +9,7 @@ from difflib import get_close_matches
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Caricare il file Excel e i fogli di lavoro
-file_path = 'C:/Users/07703536/Desktop/Dashboard_FTTH/Dashboard_FTTH.xlsx'
+file_path = 'Dashboard_FTTH.xlsx'
 
 try:
     df_ftth = pd.read_excel(file_path, sheet_name='Dashboard_FTTH', header=2)
